@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.co.ooweat.mappers.coupon_web.GroupMapper">
+  <select id="getGroupClientList" parameterType="long" resultType="kr.co.ooweat.model.GroupVO">
+    SELECT TG.G_SEQ                             AS GROUPSEQ,
+           TG.GROUP_NAME                        AS GROUPNAME,
+           TG.ADMIN_ID                          AS ADMINID,
+           DATE_FORMAT(TG.REG_DATE, '%Y-%m-%d') AS REGDATE,
+           DATE_FORMAT(TG.MOD_DATE, '%Y-%m-%d') AS MODDATE
+    FROM TB_GROUP TG
+    WHERE 1=1
+      <if test="paramGroupSeq > 0">
+      AND G_SEQ = #{paramGroupSeq}
+        </if>
+    ORDER BY REG_DATE DESC
+    </select>
+  <insert id="insertGroup" parameterType="string">
+    INSERT INTO TB_GROUP
+      (GROUP_NAME, ADMIN_ID, REG_DATE, MOD_DATE)
+    VALUES (#{groupName}, 'admin', NOW(), NULL)
+  </insert>
+  <update id="updateGroup" parameterType="kr.co.ooweat.model.GroupVO">
+    UPDATE TB_GROUP
+    SET GROUP_NAME = #{groupName}
+    WHERE G_SEQ = #{groupSeq}
+  </update>
+
+  <insert id="insertCouponBin" parameterType="kr.co.ooweat.model.GroupVO">
+		<![CDATA[
+    INSERT INTO TB_COUPON_BIN
+      (G_SEQ, COUPON_BIN, COUPON_KEY, USE_YN, REG_DATE, MOD_DATE)
+    VALUES ((SELECT G_SEQ FROM TB_GROUP WHERE GROUP_NAME = #{groupName}), '7802',
+            '$#20827880ooweat20827881&*', 'Y',
+            NOW(), NULL)
+    ]]>
+	</insert>
+  <update id="updateCouponBinDonggu" parameterType="kr.co.ooweat.model.GroupVO">
+		<![CDATA[
+    UPDATE TB_COUPON_BIN
+    SET COUPON_BIN ='7801'
+    WHERE G_SEQ = #{groupSeq}
+    ]]>
+	</update>
+
+  <insert id="insertCouponConfig" parameterType="kr.co.ooweat.model.GroupVO">
+		<![CDATA[
+    INSERT INTO TB_COUPON_CONF
+    (G_SEQ, MAINCOMP_CNT, MAINCOMP_AMT, TERM_CNT, TERM_AMT, USE_DAY, USE_YN, REG_DATE, MOD_DATE,
+     SEND_CNT, MERCHANT_NAME, USE_GIFT_YN, USE_RUSE_YN)
+    VALUES ((SELECT G_SEQ FROM TB_GROUP WHERE GROUP_NAME = #{groupName}), 100000, 10000000, 10000,
+            1000000, 60, 'Y',
+            NOW(), NULL, 0, #{groupName}, #{useGiftYn}, #{useRuseYn})
+    ]]>
+	</insert>
+  <select id="groupInfo" parameterType="long"
+    resultType="kr.co.ooweat.model.GroupVO">
+        <![CDATA[
+    SELECT TG.G_SEQ                             AS GROUPSEQ,
+           TG.GROUP_NAME                        AS GROUPNAME,
+           TG.ADMIN_ID                          AS ADMINID,
+           DATE_FORMAT(TG.REG_DATE, '%Y-%m-%d') AS REGDATE,
+           DATE_FORMAT(TG.MOD_DATE, '%Y-%m-%d') AS MODDATE
+    FROM TB_GROUP TG
+    WHERE TG.G_SEQ = #{paramGroupSeq}
+    ]]>
+    </select>
+  <select id="clientInfo" parameterType="long"
+    resultType="kr.co.ooweat.model.MemberGroupVO">
+        <![CDATA[
+    SELECT TG.G_SEQ                              AS GROUPSEQ,
+           BUSINESS_NO                           AS BUSINESSNO,
+           COMPANY_SEQ                           AS COMPANYSEQ,
+           COMP_NAME                             AS COMPANYNAME,
+           BUSINESS_NAME                         AS BUSINESSNAME,
+           ETC1                                  AS ETC1,
+           ETC2                                  AS ETC2,
+           ETC3                                  AS ETC3,
+           TG.GROUP_NAME                         AS GROUPNAME,
+           TMG.ADMIN_ID                          AS ADMINID,
+           DATE_FORMAT(TMG.REG_DATE, '%Y-%m-%d') AS REGDATE,
+           DATE_FORMAT(TMG.MOD_DATE, '%Y-%m-%d') AS MODDATE
+    FROM TB_MEMB_GROUP TMG
+           LEFT JOIN TB_GROUP TG ON TG.G_SEQ = TMG.G_SEQ
+    WHERE TG.G_SEQ = #{paramGroupSeq}
+    ]]>
+    </select>
+  <insert id="insertClient" parameterType="java.util.Map">
+    INSERT INTO TB_MEMB_GROUP
+    (G_SEQ, BUSINESS_NO, COMPANY_SEQ, COMP_NAME, BUSINESS_NAME, ADMIN_ID, REG_DATE, MOD_DATE)
+    VALUES
+    <foreach item="item" index="index" collection="list" separator=" , ">
+      (
+      #{item.groupSeq},
+      #{item.businessNo},
+      #{item.companySeq},
+      #{item.companyName},
+      #{item.businessName},
+      #{item.adminID},
+      NOW(), NULL)
+    </foreach>
+
+  </insert>
+
+  <select id="checkClient" parameterType="long" resultType="int">
+		<![CDATA[
+    SELECT COUNT(*)
+    FROM TB_MEMB_GROUP
+    WHERE G_SEQ = #{groupSeq}
+    ]]>
+	</select>
+
+  <delete id="deleteClient" parameterType="long">
+    DELETE
+    FROM TB_MEMB_GROUP
+    WHERE G_SEQ = #{groupSeq}
+  </delete>
+
+  <select id="userList" parameterType="string" resultType="kr.co.ooweat.model.UserVO">
+    SELECT TG.GROUP_NAME                        AS GROUPNAME,
+           TU.SEQ                               AS USERSEQ,
+           TU.G_SEQ                             AS GROUPSEQ,
+           TU.ID                                AS USERID,
+           TU.NAME                              AS USERNAME,
+           TU.ROLE                              AS ROLE,
+           DATE_FORMAT(TU.REG_DATE, '%Y-%m-%d') AS REGDATE,
+           DATE_FORMAT(TU.MOD_DATE, '%Y-%m-%d') AS MODDATE,
+           MOD_ADMIN_ID                         AS MODADMINID,
+           USE_YN                               AS USEYN,
+           USE_DASHBOARD                        AS USEDASHBOARD,
+           USE_COUPON_CONFIG                    AS USECOUPONCONFIG,
+           USE_COUPON_PUBLISH                   AS USECOUPONPUBLISH,
+           USE_COUPON_ISSUANCE_HISTORY          AS USECOUPONISSUANCEHISTORY,
+           USE_COUPON_SALES_HISTORY             AS USECOUPONSALESHISTORY
+    FROM TB_USER TU
+           LEFT JOIN TB_GROUP TG ON TG.G_SEQ = TU.G_SEQ
+    WHERE 1=1
+    <if test="paramGroupSeq > 0">
+      AND TU.G_SEQ = #{paramGroupSeq}
+    </if>
+    <if test='searchType != "0"'>
+      AND ${searchType} LIKE CONCAT('%',#{searchValue},'%')
+    </if>
+    ORDER BY TU.REG_DATE DESC
+	</select>
+  <select id="userInfo" parameterType="long" resultType="kr.co.ooweat.model.UserVO">
+		<![CDATA[
+    SELECT TU.G_SEQ                             AS GROUPSEQ,
+           TG.GROUP_NAME                        AS GROUPNAME,
+           TU.SEQ                               AS USERSEQ,
+           TU.ID                                AS USERID,
+           TU.PASSWORD                          AS USERPW,
+           TU.NAME                              AS USERNAME,
+           TU.ROLE                              AS ROLE,
+           DATE_FORMAT(TU.REG_DATE, '%Y-%m-%d') AS REGDATE,
+           DATE_FORMAT(TU.MOD_DATE, '%Y-%m-%d') AS MODDATE,
+           TU.MOD_ADMIN_ID                      AS MODADMINID,
+           TU.USE_YN                            AS USEYN,
+           USE_DASHBOARD                        AS USEDASHBOARD,
+           USE_COUPON_CONFIG                    AS USECOUPONCONFIG,
+           USE_COUPON_PUBLISH                   AS USECOUPONPUBLISH,
+           USE_COUPON_ISSUANCE_HISTORY          AS USECOUPONISSUANCEHISTORY,
+           USE_COUPON_SALES_HISTORY             AS USECOUPONSALESHISTORY
+    FROM TB_USER TU
+           LEFT JOIN TB_GROUP TG ON TG.G_SEQ = TU.G_SEQ
+    WHERE TU.SEQ = #{paramUserSeq}
+    ]]>
+	</select>
+  <insert id="insertUser" parameterType="kr.co.ooweat.model.UserVO">
+    INSERT INTO TB_USER
+    (G_SEQ, ID, PASSWORD, NAME, `ROLE`, REG_DATE, MOD_DATE, MOD_ADMIN_ID, USE_YN,
+     USE_DASHBOARD, USE_COUPON_CONFIG, USE_COUPON_PUBLISH, USE_COUPON_ISSUANCE_HISTORY, USE_COUPON_SALES_HISTORY
+     )
+    VALUES (#{groupSeq}, #{userId}, MD5(#{userPw}), #{userName}, #{role}, NOW(), NULL,
+            #{modAdminId}, 'Y', #{useDashboard}, #{useCouponPublish}, #{useCouponConfig}, #{useCouponIssuanceHistory}, #{useCouponSalesHistory});
+  </insert>
+  <update id="updateUser" parameterType="kr.co.ooweat.model.UserVO">
+    UPDATE TB_USER
+    SET ID=#{userId},
+        PASSWORD=${userPw},
+        NAME=#{userName},
+        MOD_ADMIN_ID=#{userId},
+        MOD_DATE=NOW(),
+        G_SEQ=#{groupSeq},
+        ROLE=#{role},
+        USE_YN=#{useYN},
+        USE_DASHBOARD =#{useDashboard},
+        USE_COUPON_CONFIG=#{useCouponConfig},
+        USE_COUPON_PUBLISH=#{useCouponPublish},
+        USE_COUPON_ISSUANCE_HISTORY=#{useCouponIssuanceHistory},
+        USE_COUPON_SALES_HISTORY=#{useCouponSalesHistory}
+    WHERE SEQ = #{userSeq}
+  </update>
+
+  <select id="getGroupList" parameterType="long" resultType="kr.co.ooweat.model.GroupVO">
+    <![CDATA[
+    SELECT TG.G_SEQ      AS GROUPSEQ,
+           TG.GROUP_NAME AS GROUPNAME
+    FROM TB_GROUP TG
+           LEFT JOIN TB_USER TU ON TU.G_SEQ = TG.G_SEQ
+		]]>
+        GROUP BY TG.G_SEQ, TG.GROUP_NAME
+    ORDER BY FIELD(TG.G_SEQ, 0) DESC,
+             TG.G_SEQ DESC
+  </select>
+
+  <select id="getGroupSettingList" parameterType="string"
+    resultType="kr.co.ooweat.model.CouponConfVO">
+    SELECT TCC.G_SEQ                                                                       AS GROUPSEQ,
+           TG.GROUP_NAME                                                                   AS GROUPNAME,
+           TCC.MAINCOMP_CNT                                                                AS MAINCOMPCNT,
+           TCC.MAINCOMP_AMT                                                                AS MAINCOMPAMT,
+           TCC.TERM_CNT                                                                    AS TERMCNT,
+           TCC.TERM_AMT                                                                    AS TERMAMT,
+           TCC.USE_DAY                                                                     AS USEDAY,
+           TCC.USE_YN                                                                      AS USEYN,
+           IFNULL(DATE_FORMAT(TCC.REG_DATE, '%Y-%m-%d'), '-')                              AS REGDATE,
+           IFNULL(DATE_FORMAT(TCC.MOD_DATE, '%Y-%m-%d'), '-')                              AS MODDATE,
+           TCC.SEND_CNT                                                                    AS SENDCNT,
+           TCC.USE_COUNT                                                                   AS USABLECOUNT,
+           IFNULL(TCC.FIX_AMOUNT, 0)                                                       AS FIXAMOUNT,
+           (SELECT COUNT(*)
+            FROM TB_COUPON_BAL TCB
+            WHERE TG.G_SEQ = TCB.G_SEQ
+              AND DATE_FORMAT(TCB.REG_DATE, '%Y%m%d') BETWEEN #{startDate} AND #{endDate}) AS USEDCOUNT,
+            TCC.USE_GIFT_YN AS USEGIFTYN,
+            TCC.USE_RUSE_YN AS USERUSEYN
+    FROM TB_COUPON_CONF TCC
+           LEFT JOIN TB_GROUP TG ON TCC.G_SEQ = TG.G_SEQ
+    WHERE USE_YN = 'Y'
+    <if test="paramGroupSeq > 0">
+      AND TCC.G_SEQ = #{paramGroupSeq}
+    </if>
+    ORDER BY TCC.REG_DATE DESC, TCC.G_SEQ DESC
+  </select>
+
+  <select id="alreadyClientCheck" resultType="kr.co.ooweat.model.MemberGroupVO">
+    SELECT TG.GROUP_NAME     AS GROUPNAME,
+           TMG.BUSINESS_NO   AS BUSINESSNO,
+           TMG.BUSINESS_NAME AS BUSINESSNAME,
+           TMG.COMPANY_SEQ   AS COMPANYSEQ,
+           TMG.COMP_NAME     AS COMPANYNAME
+    FROM TB_MEMB_GROUP TMG
+           LEFT JOIN TB_GROUP TG ON TMG.G_SEQ = TG.G_SEQ
+    WHERE COMPANY_SEQ = #{companySeq}
+      AND BUSINESS_NO = #{businessNo};
+  </select>
+</mapper>

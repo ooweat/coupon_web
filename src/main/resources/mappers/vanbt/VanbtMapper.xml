@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.co.ooweat.mappers.vanbt.VanbtMapper">
+	<!-- 2023.06.19 twkim VMMS -> VANBT Federated 시, 동기화 이슈가 있어서 VANBT에서 VMMS를 바라보도록 임시 설정 -->
+	<select id="getVmmsCompanyList" resultType="kr.co.ooweat.model.BizVO">
+		<![CDATA[
+		SELECT seq  AS companySeq,
+			   name AS companyName
+		FROM VMMS.TB_COMPANY
+		ORDER BY name
+		]]>
+	</select>
+    <select id="getBusinessList" parameterType="string" resultType="kr.co.ooweat.model.BizVO">
+		<![CDATA[
+			SELECT TVM.COMPANY_SEQ AS COMPANYSEQ,
+						 TC.NAME         AS COMPANYNAME,
+						 T.BUSINESSNO    AS BUSINESSNO,
+						 T.MERCHANTNAME  AS MERCHANTNAME
+			FROM VANBT.TBLTERMMST T
+						 LEFT JOIN VMMS.TB_VENDING_MACHINE TVM ON TVM.TERMINAL_ID = T.TERMINALID
+						 LEFT JOIN VMMS.TB_COMPANY TC ON TC.SEQ = TVM.COMPANY_SEQ
+			WHERE T.BIZTYPE = '00'
+				AND TVM.COMPANY_SEQ = #{companySeq}
+			GROUP BY COMPANY_SEQ, BUSINESSNO, MERCHANTNAME, NAME
+			ORDER BY MERCHANTNAME
+        ]]>
+	</select>
+</mapper>

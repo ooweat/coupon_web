@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org/DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.co.ooweat.mappers.coupon_web.CouponMapper">
+  <select id="usageCoupon" parameterType="java.util.Map"
+    resultType="kr.co.ooweat.model.SummaryVO">
+    <![CDATA[
+        SELECT *
+        FROM (SELECT CASE
+                   WHEN COUPON_STAT IN ('D', 'L') THEN '잠금/만료'
+                   WHEN COUPON_STAT = 'N' THEN '미사용'
+                   WHEN COUPON_STAT = 'U' THEN '사용완료'
+                   END  AS sumType,
+               COUNT(*) AS sumCount
+        FROM TB_COUPON_BAL TCB
+        ]]>
+    WHERE DATE_FORMAT(REG_DATE, '%Y%m') = #{yyyyMM}
+    <if test="role != 'system'">
+      AND G_SEQ = #{groupSeq}
+    </if>
+    GROUP BY CASE
+    WHEN COUPON_STAT IN ('D', 'L') THEN '잠금/만료'
+    WHEN COUPON_STAT = 'N' THEN '미사용'
+    WHEN COUPON_STAT = 'U' THEN '사용완료'
+    END
+    UNION
+    SELECT '잠금/만료' AS SUMTYPE, 0 AS SUMCOUNT
+    FROM DUAL
+    UNION
+    SELECT '미사용' AS SUMTYPE, 0 AS SUMCOUNT
+    FROM DUAL
+    UNION
+    SELECT '사용완료' AS SUMTYPE, 0 AS SUMCOUNT
+    FROM DUAL) A
+    GROUP BY SUMTYPE
+  </select>
+  <select id="recentCouponTop7" parameterType="java.util.Map"
+    resultType="kr.co.ooweat.model.CouponVO">
+    <![CDATA[
+        SELECT B_SEQ       AS BSEQ,
+               COUPON_NO   AS COUPONNO,
+               COUPON_AMT  AS COUPONAMT,
+               CASE
+                   WHEN COUPON_TYPE = 'RUSE' THEN CONCAT('다회권(',TCC.USE_COUNT,'회)')
+                   WHEN COUPON_TYPE = 'GIFT' THEN '1회권'
+                   END     AS COUPONTYPE,
+               REV_MOBILE  AS REVMOBILE,
+               TCB.REG_DATE    AS REGDATE,
+               COUPON_STAT AS COUPONSTAT,
+               TG.GROUP_NAME AS GROUPNAME
+        FROM TB_COUPON_BAL TCB
+        LEFT JOIN TB_GROUP TG ON TCB.G_SEQ = TG.G_SEQ
+        LEFT JOIN TB_COUPON_CONF TCC ON TG.G_SEQ = TCC.G_SEQ
+        ]]>
+    WHERE DATE_FORMAT(TCB.REG_DATE, '%Y%m%d') >= #{firstDayOfMonth}
+        AND TCB.COUPON_STAT NOT IN ('H')
+    <if test="role != 'system'">
+      AND TCB.G_SEQ = #{groupSeq}
+    </if>
+    ORDER BY TCB.REG_DATE DESC LIMIT 7
+  </select>
+  <update id="updateCouponStat" parameterType="java.util.Map">
+    UPDATE TB_COUPON_BAL
+    SET COUPON_STAT = #{couponStat}
+    <if test="couponStat eq 'N'.toString()">
+      , COUPON_REAMT = COUPON_AMT
+    </if>
+    <if test="couponStat eq 'U'.toString()">
+      , COUPON_REAMT = 0
+    </if>
+    WHERE COUPON_NO = #{couponNo}
+  </update>
+  <update id="updateCouponExpire" parameterType="string">
+    UPDATE TB_COUPON_BAL
+    SET COUPON_STAT = 'D'
+    WHERE EXPIRE_DAY = #{expireDate}
+      AND COUPON_STAT = 'N'
+  </update>
+  <update id="updateCouponConfig" parameterType="kr.co.ooweat.model.CouponConfVO">
+    UPDATE TB_COUPON_CONF
+    SET MAINCOMP_CNT=#{mainCompCnt},
+        MAINCOMP_AMT=#{mainCompAmt},
+        TERM_CNT=#{termCnt},
+        TERM_AMT=#{termAmt},
+        USE_DAY=#{useDay},
+        MOD_DATE=NOW(),
+        USE_COUNT=#{usableCount},
+        FIX_AMOUNT=#{fixAmount},
+        MERCHANT_NAME=#{merchantName},
+        USE_GIFT_YN=#{useGiftYn},
+        USE_RUSE_YN=#{useRuseYn}
+    WHERE G_SEQ = #{groupSeq}
+  </update>
+  <select id="getCouponInfo" parameterType="string"
+    resultType="kr.co.ooweat.model.CouponVO">
+    SELECT TCB.G_SEQ   AS GROUPSEQ,
+           ID          AS USERID,
+           COUPON_TYPE AS COUPONTYPE,
+           COUPON_AMT  AS COUPONAMT,
+           COUPON_NO   AS COUPONNO,
+           REV_MOBILE  AS REVMOBILE
+    FROM TB_COUPON_BAL TCB
+           LEFT JOIN TB_USER TU ON TCB.U_SEQ = TU.SEQ
+    WHERE COUPON_NO = #{couponNo}
+  </select>
+  <select id="getCouponCanvasInfo" parameterType="string"
+    resultType="kr.co.ooweat.model.CouponVO">
+		<![CDATA[
+    SELECT TG.GROUP_NAME      AS GROUPNAME,
+           TCC.MERCHANT_NAME  AS MERCHANTNAME,
+           COUPON_NO          AS COUPONNO,
+           CASE
+             WHEN TCB.COUPON_TYPE = 'RUSE' THEN
+               IFNULL((SELECT MIN(AFT_AMT)
+                       FROM TB_COUPON_SALES S
+                       WHERE S.COUPON_NO = #{cpn}
+                         AND S.MSG_TYPE = '01'
+                         AND S.REPLY_CODE = '0000'), TCB.COUPON_AMT)
+             ELSE COUPON_AMT
+             END              AS COUPONAMT,
+           CASE
+             WHEN COUPON_STAT = 'N' THEN '미사용'
+             WHEN COUPON_STAT = 'L' THEN '잠금'
+             WHEN COUPON_STAT = 'D' THEN '기간만료'
+             WHEN COUPON_STAT = 'U' THEN '사용완료'
+             ELSE ''
+             END              AS COUPONSTAT,
+           TCB2.COUPON_BIN    AS COUPONBIN,
+           TCB.COUPON_TYPE    AS COUPONTYPE,
+           CASE
+             WHEN TCB.COUPON_TYPE = 'RUSE' THEN
+                 TCC.USE_COUNT - (SELECT A.CNT - B.CNT
+                                  FROM (
+                                         (SELECT COUNT(*) AS CNT
+                                          FROM TB_COUPON_SALES S
+                                          WHERE S.COUPON_NO = #{cpn}
+                                            AND S.MSG_TYPE = '01'
+                                            AND S.REPLY_CODE = '0000') A,
+                                          (SELECT COUNT(*) AS CNT
+                                           FROM TB_COUPON_SALES S
+                                           WHERE S.COUPON_NO = #{cpn}
+                                           AND S.MSG_TYPE = '08'
+                                           AND S.REPLY_CODE = '0000') B
+                                         ))
+             ELSE 1
+             END              AS COUPONCOUNT
+      ,
+           TCC.USE_COUNT      AS COUPONCONFCOUNT
+      ,
+           DATE_FORMAT(TCB.REG_DATE
+             , '%Y년 %m월 %d일') AS REGDATE
+      ,
+           DATE_FORMAT(TCB.EXPIRE_DAY
+             , '%Y년 %m월 %d일') AS EXPIREDAY
+    FROM TB_COUPON_BAL TCB
+           LEFT JOIN TB_GROUP TG
+                     ON TG.G_SEQ = TCB.G_SEQ
+           LEFT JOIN TB_COUPON_CONF TCC ON TCC.G_SEQ = TCB.G_SEQ
+           LEFT JOIN TB_COUPON_BIN TCB2 ON TCB2.G_SEQ = TG.G_SEQ
+    WHERE TCB.COUPON_NO = #{cpn};
+    ]]>
+	</select>
+  <select id="getCouponUseList" parameterType="string"
+    resultType="kr.co.ooweat.model.CouponSalesVO">
+    <![CDATA[
+    SELECT TCS.COUPON_NO                                  AS COUPONNO,
+           TG.GROUP_NAME                                  AS GROUPNAME,
+           TCS.TRANSACTION_NO                             AS TRANSACTIONNO,
+           TCS.TERMINAL_ID                                AS TERMINALID,
+           COUPON_AMT                                     AS COUPONAMT,
+           CASE
+             WHEN COUPON_TYPE = 'RUSE'
+               THEN
+               CONCAT('잔여회수(', TCC.USE_COUNT - ((SELECT COUNT(*) AS CNT
+                                                 FROM TB_COUPON_SALES TCS2
+                                                 WHERE TCS2.B_SEQ = TCS.B_SEQ
+                                                   AND TCS2.MSG_TYPE = '01'
+                                                   AND TCS2.REPLY_CODE = '0000'
+                                                   AND TCS2.REG_DATE < TCS.REG_DATE)
+                 - (SELECT COUNT(*) AS CNT
+                    FROM TB_COUPON_SALES TCS2
+                    WHERE TCS2.B_SEQ = TCS.B_SEQ
+                      AND TCS2.MSG_TYPE
+                      = '08'
+                      AND TCS2.REPLY_CODE = '0000'
+                      AND TCS2.REG_DATE < TCS.REG_DATE)) - 1, '/', TCC.USE_COUNT,
+                      '회)')
+             WHEN COUPON_TYPE = 'GIFT' THEN '1회권' END     AS COUPONTYPE,
+           CASE
+             WHEN MSG_TYPE = '01' AND REPLY_CODE = '0000' THEN '승인'
+             WHEN MSG_TYPE = '01' AND REPLY_CODE = '2002' THEN '기사용'
+             WHEN MSG_TYPE = '01' AND REPLY_CODE = '2007' THEN '잔액부족'
+             WHEN MSG_TYPE = '02' THEN '취소'
+             WHEN MSG_TYPE = '06' THEN '조회'
+             WHEN MSG_TYPE = '08' THEN '망취소'
+             END                                          AS MSGTYPE,
+           TRANSEQ_NO                                     AS TRANSEQNO,
+           TRAN_DATE                                      AS TRANDATE,
+           TRAN_TIME                                      AS TRANTIME,
+           PRE_AMT                                        AS PREAMT,
+           TRAN_AMT                                       AS TRANAMT,
+           IF(COUPON_TYPE = 'GIFT', 0, AFT_AMT)           AS AFTAMT,
+           RTNTRAN_AMT                                    AS RTNTRANAMT,
+           IFNULL(APP_NO, '-')                            AS APPNO,
+           IFNULL(COL_NO, '-')                            AS COLNO,
+           PRODUCT_CODE                                   AS PRODUCTCODE,
+           PRODUCT_NAME                                   AS PRODUCTNAME,
+           REPLY_CODE                                     AS REPLYCODE,
+           REPLY_MSG                                      AS REPLYMSG,
+           MEMO                                           AS MEMO,
+           ORG_TRAN_DATE                                  AS ORGTRANDATE,
+           ORG_APP_NO                                     AS ORGAPPNO,
+           DATE_FORMAT(TCS.REG_DATE, '%Y-%m-%d %H:%i:%s') AS REGDATE,
+           DATE_FORMAT(TCS.MOD_DATE, '%Y-%m-%d %H:%i:%s') AS MODDATE,
+           CNL_DATE                                       AS CNLDATE,
+           MOD_ADMIN_ID                                   AS MODADMINID
+    FROM TB_COUPON_SALES TCS
+           LEFT JOIN TB_COUPON_BAL TCB ON TCB.B_SEQ = TCS.B_SEQ
+           LEFT JOIN TB_GROUP TG ON TG.G_SEQ = TCB.G_SEQ
+           LEFT JOIN TB_COUPON_CONF TCC ON TG.G_SEQ = TCC.G_SEQ
+        ]]>
+WHERE DATE_FORMAT(TCS.REG_DATE, '%Y%m%d') BETWEEN
+      (SELECT DATE_FORMAT(REG_DATE, '%Y%m%d') FROM TB_COUPON_BAL TCB WHERE COUPON_NO = #{couponNo})
+      AND (SELECT EXPIRE_DAY FROM TB_COUPON_BAL TCB WHERE COUPON_NO = #{couponNo})
+      AND TCS.COUPON_NO = #{couponNo}
+      AND TCS.MSG_TYPE = '01'
+    ORDER BY REGDATE DESC;
+  </select>
+  <select id="getCouponConfig" parameterType="java.util.Map"
+    resultType="kr.co.ooweat.model.CouponConfVO">
+		<![CDATA[
+    SELECT TCC.MAINCOMP_CNT                                                                    AS MAINCOMPCNT,
+           TCC.MAINCOMP_AMT                                                                    AS MAINCOMPAMT,
+           TCC.TERM_CNT                                                                        AS TERMCNT,
+           TCC.TERM_AMT                                                                        AS TERMAMT,
+           TCC.USE_DAY                                                                         AS USEDAY,
+           TCC.USE_YN                                                                          AS USEYN,
+           DATE_FORMAT(TCC.REG_DATE, '%Y-%m-%d')                                               AS REGDATE,
+           DATE_FORMAT(TCC.MOD_DATE, '%Y-%m-%d')                                               AS MODDATE,
+           TCC.SEND_CNT                                                                        AS SENDCNT,
+           TCC.USE_COUNT                                                                       AS USABLECOUNT,
+           TCC.FIX_AMOUNT                                                                      AS FIXAMOUNT,
+           TCC.G_SEQ                                                                           AS GROUPSEQ,
+           TCC.MERCHANT_NAME                                                                   AS MERCHANTNAME,
+           (SELECT COUNT(*)
+            FROM TB_COUPON_BAL TCB
+            WHERE TG.G_SEQ = TCB.G_SEQ
+              AND DATE_FORMAT(TCB.REG_DATE, '%Y%m%d') BETWEEN #{firstDayOfMonth} AND #{today}) AS USEDCOUNT,
+           TCC.USE_GIFT_YN                      AS USEGIFTYN,
+           TCC.USE_RUSE_YN                      AS USERUSEYN
+    FROM TB_COUPON_CONF TCC
+           LEFT JOIN TB_GROUP TG ON TCC.G_SEQ = TG.G_SEQ
+    WHERE TCC.G_SEQ = #{paramGroupSeq}
+    ]]>
+	</select>
+  <select id="getCouponIssuanceList" parameterType="java.util.Map"
+    resultType="kr.co.ooweat.model.CouponVO">
+    <![CDATA[
+        SELECT TG.GROUP_NAME                              AS GROUPNAME,
+               B_SEQ                                      AS BALSEQ,
+               TCB.G_SEQ                                  AS GROUPSEQ,
+               U_SEQ                                      AS USERSEQ,
+               COUPON_NO                                  AS COUPONNO,
+               TERMINAL_ID                                AS TERMINALID,
+               CASE
+                   WHEN COUPON_TYPE = 'RUSE' THEN
+                       CONCAT('다회권(', TCC.USE_COUNT, '회)')
+                   WHEN COUPON_TYPE = 'GIFT' THEN '1회권'
+                   END                                    AS COUPONTYPE,
+               COUPON_AMT                                 AS COUPONAMT,
+               COUPON_REAMT                               AS COUPONREAMT,
+               COUPON_STAT                                AS COUPONSTAT,
+               DISCNT_INFO                                AS DISCNTINFO,
+               DATE_FORMAT(TCB.EXPIRE_DAY, '%Y-%m-%d')    AS EXPIREDAY,
+               REV_MOBILE                                 AS REVMOBILE,
+               TCB.SEND_CNT                               AS SENDCNT,
+               DATE_FORMAT(TCB.REG_DATE, '%Y-%m-%d')      AS REGDATE,
+               DATE_FORMAT(TCB.REG_DATE, '%H:%i:%S')      AS REGTIME,
+               TCB.MOD_DATE                               AS MODDATE
+        FROM TB_COUPON_BAL TCB
+                 LEFT JOIN TB_GROUP TG ON TG.G_SEQ = TCB.G_SEQ
+                 LEFT JOIN TB_COUPON_CONF TCC ON TG.G_SEQ = TCC.G_SEQ
+        ]]>
+    WHERE DATE_FORMAT(TCB.REG_DATE, '%Y%m%d') between #{sDate} AND #{eDate}
+    <if test="role != 'system'">
+      AND TCB.G_SEQ = #{groupSeq}
+      AND TCB.COUPON_STAT != 'H'
+    </if>
+    <if test="role == 'system' and paramGroupSeq != 0 and paramGroupSeq != 'paramGroupSeq'">
+      AND TCB.G_SEQ = #{paramGroupSeq}
+    </if>
+    <if test="searchType !=null or searchValue !=null">
+      AND ${searchType} LIKE CONCAT('%',#{searchValue},'%')
+    </if>
+    <if test="searchOption !=null and searchOptionValue !=null">
+      AND ${searchOption} IN (${searchOptionValue})
+    </if>
+
+    ORDER BY B_SEQ DESC, REGDATE DESC
+  </select>
+  <select id="getCouponSalesList" parameterType="java.util.Map"
+    resultType="kr.co.ooweat.model.CouponSalesVO">
+    <![CDATA[
+        SELECT TCS.SEQ                                        AS SALESSEQ,
+               TCB.G_SEQ                                      AS GROUPSEQ,
+               TG.GROUP_NAME                                  AS GROUPNAME,
+               TCS.B_SEQ                                      AS BALSEQ,
+               TCS.COUPON_NO                                  AS COUPONNO,
+               TCS.TRANSACTION_NO                             AS TRANSACTIONNO,
+               TCS.TERMINAL_ID                                AS TERMINALID,
+               TCB.REV_MOBILE                                 AS REVMOBILE,
+               COUPON_AMT                                     AS COUPONAMT,
+               CASE
+           WHEN COUPON_TYPE = 'RUSE'
+               THEN
+               IF(MSG_TYPE = '01',
+                  CONCAT('다회권(', TCC.USE_COUNT - ((SELECT COUNT(*) AS CNT
+                                                   FROM TB_COUPON_SALES TCS2
+                                                   WHERE TCS2.B_SEQ = TCS.B_SEQ
+                                                     AND TCS2.MSG_TYPE = '01'
+                                                     AND TCS2.REPLY_CODE = '0000'
+                                                     AND TCS2.REG_DATE < TCS.REG_DATE)
+                      - (SELECT COUNT(*) AS CNT
+                         FROM TB_COUPON_SALES TCS2
+                         WHERE TCS2.B_SEQ = TCS.B_SEQ
+                           AND TCS2.MSG_TYPE
+                             = '08'
+                           AND TCS2.REPLY_CODE = '0000'
+                           AND TCS2.REG_DATE < TCS.REG_DATE)) - 1, '/', TCC.USE_COUNT,
+                         '회)'),
+                  CONCAT('다회권(', TCC.USE_COUNT - ((SELECT COUNT(*) AS CNT
+                                                   FROM TB_COUPON_SALES TCS2
+                                                   WHERE TCS2.B_SEQ = TCS.B_SEQ
+                                                     AND TCS2.MSG_TYPE = '01'
+                                                     AND TCS2.REPLY_CODE = '0000'
+                                                     AND TCS2.REG_DATE < TCS.REG_DATE)
+                      - (SELECT COUNT(*) AS CNT
+                         FROM TB_COUPON_SALES TCS2
+                         WHERE TCS2.B_SEQ = TCS.B_SEQ
+                           AND TCS2.MSG_TYPE
+                             = '08'
+                           AND TCS2.REPLY_CODE = '0000'
+                           AND TCS2.REG_DATE < TCS.REG_DATE)), '/', TCC.USE_COUNT,
+                         '회)'))
+           WHEN COUPON_TYPE = 'GIFT' THEN '1회권' END   AS COUPONTYPE,
+               TCS.TRAN_TYPE                                  AS TRANTYPE,
+               CASE
+                   WHEN MSG_TYPE = '01' AND REPLY_CODE = '0000' THEN '승인'
+                   WHEN MSG_TYPE = '01' AND REPLY_CODE = '2002' THEN '기사용'
+                   WHEN MSG_TYPE = '01' AND REPLY_CODE = '2007' THEN '잔액부족'
+                   WHEN MSG_TYPE = '02' THEN '취소'
+                   WHEN MSG_TYPE = '06' THEN '조회'
+                   WHEN MSG_TYPE = '08' THEN '망취소'
+                   END                                        AS MSGTYPE,
+               TRANSEQ_NO                                     AS TRANSEQNO,
+               DATE_FORMAT(TCS.TRAN_DATE, '%Y-%m-%d')         AS TRANDATE,
+               CONCAT(SUBSTR(TCS.TRAN_TIME, 1, 2), ':', SUBSTR(TCS.TRAN_TIME, 3, 2), ':',
+                      SUBSTR(TCS.TRAN_TIME, 5, 2))            AS TRANTIME,
+               PRE_AMT                                        AS PREAMT,
+               TRAN_AMT                                       AS TRANAMT,
+               AFT_AMT                                        AS AFTAMT,
+               RTNTRAN_AMT                                    AS RTNTRANAMT,
+               IFNULL(APP_NO, '-')                            AS APPNO,
+               IFNULL(COL_NO, '-')                            AS COLNO,
+               PRODUCT_CODE                                   AS PRODUCTCODE,
+               PRODUCT_NAME                                   AS PRODUCTNAME,
+               REPLY_CODE                                     AS REPLYCODE,
+               REPLY_MSG                                      AS REPLYMSG,
+               MEMO                                           AS MEMO,
+               ORG_TRAN_DATE                                  AS ORGTRANDATE,
+               ORG_APP_NO                                     AS ORGAPPNO,
+               DATE_FORMAT(TCS.REG_DATE, '%Y-%m-%d %H:%i:%s') AS REGDATE,
+               DATE_FORMAT(TCS.MOD_DATE, '%Y-%m-%d %H:%i:%s') AS MODDATE,
+               CNL_DATE                                       AS CNLDATE,
+               MOD_ADMIN_ID                                   AS MODADMINID
+        FROM TB_COUPON_SALES TCS
+                 LEFT JOIN TB_COUPON_BAL TCB ON TCB.B_SEQ = TCS.B_SEQ
+                 LEFT JOIN TB_GROUP TG ON TG.G_SEQ = TCB.G_SEQ
+                 LEFT JOIN TB_COUPON_CONF TCC ON TG.G_SEQ = TCC.G_SEQ
+        ]]>
+    WHERE DATE_FORMAT(TCS.REG_DATE, '%Y%m%d') between #{sDate} AND #{eDate}
+    <if test="role != 'system'">
+      AND TCB.G_SEQ = #{groupSeq}
+    </if>
+    <if test="role == 'system' and paramGroupSeq != 0 and paramGroupSeq != 'paramGroupSeq'">
+      AND TCB.G_SEQ = #{paramGroupSeq}
+    </if>
+    <if test="searchType !=null or searchValue !=null">
+      AND ${searchType} LIKE CONCAT('%',#{searchValue},'%')
+    </if>
+    ORDER BY TCS.SEQ DESC, TCS.TRANSACTION_NO, TCS.REG_DATE DESC
+  </select>
+</mapper>
